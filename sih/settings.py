@@ -33,7 +33,7 @@ SECRET_KEY = 'django-insecure-8g4@6poux8$3d4_c-iw4@jwoawfl0-_vzrxynxx@#z$py^n*!x
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['aquasphere.onrender.com']
 
 
 # Application definition
