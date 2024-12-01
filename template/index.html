@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MapTiler JavaScript SDK Example</title>
+    <!-- Include MapLibre GL JS -->
+    <script src="https://unpkg.com/maplibre-gl/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl/dist/maplibre-gl.css" rel="stylesheet">
+
+    <style>
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div> <!-- Map container -->
+
+    <script>
+        // Initialize the MapTiler map
+        const map = new maplibregl.Map({
+            container: 'map', // The ID of the div to render the map
+            style: 'https://api.maptiler.com/maps/basic/style.json?key=oj5S4OYZ0DF2MLKj6yAD', // MapTiler style URL
+            center: [77.1025, 28.7041], // Longitude, Latitude (Delhi in this case)
+            zoom: 10 // Initial zoom level
+        });
+
+        // Add navigation controls (zoom, rotate)
+        map.addControl(new maplibregl.NavigationControl());
+
+        // Add a marker
+        const marker = new maplibregl.Marker()
+            .setLngLat([77.1025, 28.7041]) // Longitude, Latitude
+            .addTo(map);
+    </script>
+</body>
+</html>

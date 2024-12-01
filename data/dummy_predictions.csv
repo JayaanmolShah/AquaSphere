@@ -1,0 +1,4 @@
+tavg,tmin,tmax,prcp,downstream_water_level,inflow_rate,outflow_rate,Sum_Rainfall_Lag_3Days,Sum_Rainfall_Lag_7Days,Sum_Rainfall_Lag_14Days,Sum_Rainfall_Lag_30Days,Inflow_Lag_3Days,Inflow_Lag_7Days,Inflow_Lag_14Days,Inflow_Lag_30Days,Outflow_Lag_3Days,Outflow_Lag_7Days,Outflow_Lag_14Days,Outflow_Lag_30Days,evaporation_loss_mm,Random_Forest_Prediction,XGBoost_Prediction
+20.5,15.2,25.8,0.0,700,500,400,0.2,1.0,3.5,5.0,1500,3000,7000,12000,1400,2800,6500,11500,2.0,162.9817,162.99782
+22.1,16.3,28.1,0.2,710,450,380,0.3,1.2,3.8,5.5,1400,2800,6800,12500,1300,2700,6300,12000,3.0,162.71030000000002,161.93774
+18.7,14.5,24.4,0.1,720,600,420,0.1,0.8,3.2,4.9,1550,3100,7100,11900,1450,2900,6600,11300,3.5,163.0016,162.98264
