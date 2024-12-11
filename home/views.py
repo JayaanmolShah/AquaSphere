@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from django.core.serializers import serialize
 from .serializers import PredictionInputSerializer,WaterRequirementsSerializer,IrrigationSchedulesSerializer
 from .models import irrig_sched,water_requi,water_requi_dummy, Season,TemperatureData,PredModelOutputs
-from .utils import generate_irrigation_schedule
+from .utils import generate_irrigation_schedule,update_evaporation
 import requests
 import pickle
 from joblib import load
@@ -67,6 +67,7 @@ class ForecastAPIView(APIView):
             })
 
             forecast = model.predict(future_data)
+            update_evaporation()
 
             # Return the prediction result
             result = forecast[['ds', 'yhat']].to_dict(orient='records')
@@ -299,73 +300,21 @@ class PredictionAPIView(APIView):
 
 class dashboardAPIView(APIView):
     def post(self,request):
-        
-        try:
-            end_date = datetime.utcnow()
-            start_date = end_date - timedelta(days=30)
-            start_date_str = start_date.strftime('%Y-%m-%d')
-            end_date_str = end_date.strftime('%Y-%m-%d')
-            daily_dates = pd.date_range(start=start_date_str, end=end_date_str, freq='D')
-            monthly_dates = pd.date_range(start=start_date_str, end=end_date_str, freq='M') 
-            try:
-                models = {
-                    "water_level": load('ML_models/water_level_prophet.pkl'),
-                    "et": load('ML_models/et_prophet.pkl'),
-                    "rainfall": load('ML_models/rain_monthly_prophet.pkl'),
-                }
-            except Exception as e:
-                return Response({"error": f"Error loading models: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            daily_df = pd.DataFrame({'ds': daily_dates})
-            monthly_df = pd.DataFrame({'ds': monthly_dates})
-            predictions = {
-                "water_level_prophet": None, 
-                "evapotranspiration": None,
-                "predicted_rain": None,
-            }
-            try:
-                predictions["water_level_prophet"] = models["water_level"].predict(daily_df).set_index('ds')['yhat']
-                predictions["evapotranspiration"] = models["et"].predict(daily_df).set_index('ds')['yhat']
-                predictions["predicted_rain"] = models["rainfall"].predict(monthly_df).set_index('ds')['yhat']
-            except Exception as e:
-                return Response({"error": f"Error generating predictions: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        today = date.today()
 
-            # Store predictions in DataFrame
-            result_df = pd.DataFrame(index=daily_dates)
-            result_df['water_level_prophet'] = predictions["water_level_prophet"]
-            result_df['evapotranspiration'] = predictions["evapotranspiration"]
+        # Query the database for records where the date matches today's date
+        records = PredModelOutputs.objects.filter(date=today)
 
-            monthly_rainfall = predictions["predicted_rain"].reindex(daily_dates, method='pad')
-            result_df['predicted_rain'] = monthly_rainfall
-            
-            daily_predictions = {
-                "date": [],
-                "water_level_prophet": [],
-                "evapotranspiration": [],
-                "predicted_rain": []
-            }
-            for index, row in result_df.iterrows():
-                daily_predictions["date"].append(index.strftime('%Y-%m-%d'))
-                daily_predictions["water_level_prophet"].append(row['water_level_prophet'])
-                daily_predictions["evapotranspiration"].append(row['evapotranspiration'])
-                daily_predictions["predicted_rain"].append(row['predicted_rain'])
-            # Calculate the total water level prediction for the current water level
-            # (sum of past 30 days predictions + current month rainfall + evapotranspiration)
-            current_water_level = result_df['water_level_prophet'].iloc[-1]  # Last predicted water level for today
-            total_rainfall_past_30_days = result_df['predicted_rain'].sum()  # Total rainfall for the last 30 days
-            evapotranspiration_sum = result_df['evapotranspiration'].sum()  # Sum of evapotranspiration for the last 30 days
-
-            return Response(
-                    {
-                        "message": "Predictions generated and saved successfully.",
-                        "current_water_level": current_water_level,
-                        "total_rainfall_past_30_days": total_rainfall_past_30_days,
-                        "evapotranspiration_sum": evapotranspiration_sum,
-                        
-                    },
-                    status=status.HTTP_200_OK,
-                )
-        except Exception as e:
-            error_message = {'error': str(e)}
-            return Response(error_message, status=status.HTTP_400_BAD_REQUEST)
-        
-    
+        if records.exists():
+            # Prepare the data for the response
+            data = []
+            for record in records:
+                data.append({
+                    "date": record.date,
+                    "evapotranspiration": record.evapotranspiration,
+                    "evaporation_loss": record.evaporation_loss,
+                    "water_level_prophet": record.water_level_prophet,
+                })
+            return Response(data, status=status.HTTP_200_OK)
+        else:
+            return Response({"message": "No records found for today."}, status=status.HTTP_404_NOT_FOUND)

@@ -44,6 +44,10 @@ class water_requi(models.Model):
     daily_wr_liters = models.FloatField() 
     rainfall_mm = models.FloatField() 
     area_ha = models.FloatField(null=True) 
+    daily_idustrial_requi=models.FloatField(null=True)
+    daily_domestic_requi=models.FloatField(null=True) 
+ 
+
 
     def __str__(self):
         return f"{self.crop_name} - {self.date}"
@@ -96,6 +100,7 @@ class PredModelOutputs(models.Model):
     date = models.DateField(null=False, unique=True)
     predicted_rain = models.FloatField(null=True)
     evapotranspiration = models.FloatField(null=True)
+    evaporation_loss = models.FloatField(null=True)
     water_level_xgb = models.FloatField(null=True)
     water_level_prophet = models.FloatField(null=True)
     t_avg = models.FloatField(null=False)

@@ -1,6 +1,7 @@
-from datetime import datetime
+import datetime
 import pandas as pd
-from .models import irrig_sched, water_requi
+from .models import irrig_sched, water_requi,PredModelOutputs
+import numpy as np
 
 def calculate_water_requirement_with_rainfall(crop_data, plantation_dates, rainfall_data,year):
     """
@@ -71,3 +72,74 @@ def generate_irrigation_schedule(crop_data, plantation_dates, rainfall_data,year
     irrig_sched.objects.bulk_create(irrigation_schedule)
 
     return irrigation_schedule
+
+
+
+
+
+# Helper function to determine the season
+def get_season(date):
+    if not isinstance(date, datetime.date):
+        raise ValueError(f"Expected a datetime.date object, got {type(date)}")
+
+    # Extract the month and day
+    month_day = date.strftime("%m-%d")
+    print(f"Extracted Month-Day: {month_day}")  # Debugging
+
+    # Check the season
+    if "06-01" <= month_day <= "10-31":
+        return "kharif"
+    elif "11-01" <= month_day or month_day <= "03-31":  # Rabi spans year-end
+        return "rabi"
+    elif "04-01" <= month_day <= "05-31":
+        return "summer"
+    else:
+        raise ValueError(f"Invalid date for season determination: {date}.")
+
+# Function to calculate evaporation
+def calculate_evaporation(tmin, tmax, tavg, season):
+    G = 0  # Ground heat flux, negligible for reservoirs
+    gamma = 0.066  # Psychrometric constant (kPa/°C)
+    delta = (4098 * (0.6108 * np.exp((17.27 * tavg) / (tavg + 237.3)))) / ((tavg + 237.3) ** 2)
+
+    es_tmax = 0.6108 * np.exp((17.27 * tmax) / (tmax + 237.3))
+    es_tmin = 0.6108 * np.exp((17.27 * tmin) / (tmin + 237.3))
+    es = (es_tmax + es_tmin) / 2  # Saturation vapor pressure (kPa)
+    vpd = es * 0.3  # Vapor pressure deficit (kPa)
+
+    # Assign approximate net radiation based on agricultural season
+    if season == "kharif":
+        Rn = 12  # MJ/m²/day (monsoon period)
+    elif season == "rabi":
+        Rn = 14  # MJ/m²/day (winter period)
+    elif season == "summer":
+        Rn = 18  # MJ/m²/day (pre-monsoon period)
+    else:
+        raise ValueError("Invalid season. Choose 'kharif', 'rabi', or 'summer'.")
+
+    evaporation_loss = (0.408 * delta * (Rn - G) + gamma * (900 / (tavg + 273)) * 2 * vpd) / (delta + gamma)
+    return max(evaporation_loss, 0)
+
+# Main function to update the evaporation column
+def update_evaporation():
+    records = PredModelOutputs.objects.filter(evaporation_loss__isnull=True)
+    for record in records:
+        try:
+            if not isinstance(record.date, datetime.date):
+                raise TypeError(f"Expected datetime.date, got {type(record.date)} for record ID {record.id}")
+            print(f"Record ID: {record.id}, Date: {record.date}, Extracted Month-Day: {record.date.strftime('%m-%d')}")
+            # Retrieve required fields
+            tmin = record.t_min  # Replace with actual field name for tmin
+            tmax = record.t_max  # Replace with actual field name for tmax
+            tavg = record.t_max   # Replace with the actual calculation if different
+            season = get_season(record.date)
+            # Calculate evaporation
+            evaporation_loss = calculate_evaporation(tmin, tmax, tavg, season)
+            
+            # Update record
+            record.evaporation_loss = evaporation_loss
+            record.save()
+        except Exception as e:
+            print(f"Error processing record {record.id}: {e}")
+
+# Call the function
