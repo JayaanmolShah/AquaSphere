@@ -142,6 +142,7 @@ class LongTermOutput(models.Model):
     water_level_prophet = models.FloatField(null=False)
     water_in_litres = models.FloatField(null=False)
     req_litres = models.FloatField(null=False)
+    req_mm = models.FloatField(null=True)
     water_difference = models.FloatField(null=False)
     silt=models.FloatField(null=True)
     def __str__(self):
