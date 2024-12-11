@@ -33,7 +33,7 @@ SECRET_KEY = 'django-insecure-8g4@6poux8$3d4_c-iw4@jwoawfl0-_vzrxynxx@#z$py^n*!x
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['aquasphere.onrender.com']
+ALLOWED_HOSTS = ['aquasphere.onrender.com','127.0.0.1']
 
 
 # Application definition
@@ -86,6 +86,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'sih.wsgi.application'
+CELERY_BROKER_URL = 'redis://localhost:6379/0'  # Celery with Redis
 
 
 # Database
