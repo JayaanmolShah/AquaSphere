@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.core.serializers import serialize
 from .serializers import PredictionInputSerializer,WaterRequirementsSerializer,IrrigationSchedulesSerializer
-from .models import irrig_sched,water_requi,water_requi_dummy, Season,TemperatureData,PredModelOutputs
+from .models import irrig_sched,water_requi,water_requi_dummy, Season,TemperatureData,PredModelOutputs,LongTermOutput
 from .utils import generate_irrigation_schedule,update_evaporation
 import requests
 import pickle
@@ -301,7 +301,16 @@ class PredictionAPIView(APIView):
 class dashboardAPIView(APIView):
     def post(self,request):
         today = date.today()
+        prophet_model= load('ML_models/water_level_prophet.pkl')
+        periods = int(request.data.get('periods', 1))  # Default to 10 if not provided
 
+        future_data = pd.DataFrame({
+            'ds': pd.date_range(start=today, periods=periods, freq='D')  # Modify this as per your requirement
+        })
+
+        forecast = prophet_model.predict(future_data)
+        curr_water_requi = forecast[['ds', 'yhat']].to_dict(orient='records')
+        response_data = {"curr_water_requi": curr_water_requi}
         # Query the database for records where the date matches today's date
         records = PredModelOutputs.objects.filter(date=today)
 
@@ -314,7 +323,94 @@ class dashboardAPIView(APIView):
                     "evapotranspiration": record.evapotranspiration,
                     "evaporation_loss": record.evaporation_loss,
                     "water_level_prophet": record.water_level_prophet,
+
                 })
-            return Response(data, status=status.HTTP_200_OK)
+            response_data["today_records"] = data
+            return Response(response_data, status=status.HTTP_200_OK)
         else:
-            return Response({"message": "No records found for today."}, status=status.HTTP_404_NOT_FOUND)
+            response_data["today_records"] = "No records found for today."
+            return Response(response_data, status=status.HTTP_404_NOT_FOUND)
+        
+
+
+
+
+def read_water_req_table(Year, Season):
+    df = pd.read_csv('D:/sih/backend/data/water_requi.csv')
+    filtered_df = df[(df['Year'] == Year) & (df['Season'] == Season)].copy()  # Create a copy to avoid warnings
+
+    # Ensure Total Water Requirement (ML) is not negative
+    if 'Total Water Requirement (ML)' in filtered_df.columns:
+        filtered_df.loc[:, 'Total Water Requirement (ML)'] = filtered_df['Total Water Requirement (ML)'].abs()
+    print(filtered_df)
+    return filtered_df
+
+
+def calculate_longterm_outputs(start_date, end_date, year, season):
+    # Read WaterReqTable from CSV
+    water_req_table = read_water_req_table(year, season)
+
+    # Get predictions from PredModelOutputs
+    pred_model_outputs = PredModelOutputs.objects.filter(date__range=[start_date, end_date])
+    longterm_outputs = []
+    dam_area_m2 = 1080000000  # Area of dam in m^2
+
+    # Process each crop in the water requirement table
+    for _, record in water_req_table.iterrows():
+        
+        area_m2 = record['Area (Ha)'] * 10000
+        volume_liters=area_m2 * record['Rainfall (mm)']
+        net_water_req_mm = record['Irrigation Requirement (mm)'] - record['Rainfall (mm)']
+
+        # Ensure water requirement is not negative
+        net_water_req_mm = max(net_water_req_mm, 0)
+        total_net_water_req_ml = (net_water_req_mm * area_m2) / 1_000_000
+
+        for prediction in pred_model_outputs:
+            daily_net_water_req_ml = (
+                ((net_water_req_mm - prediction.predicted_rain + prediction.evapotranspiration) * area_m2) / 1_000_000
+            )
+            daily_net_water_req_ml = max(daily_net_water_req_ml, 0)  # Ensure non-negative values
+
+            water_in_reservoir_ml = (prediction.water_level_prophet * dam_area_m2) / 1_000  # Convert to ML
+            siltation_loss_ml = 0.02 * water_in_reservoir_ml
+            actual_water_available_ml = water_in_reservoir_ml - siltation_loss_ml
+
+            longterm_output = LongTermOutput.objects.create(
+                date=prediction.date,
+                water_level_prophet=prediction.water_level_prophet,
+                water_in_litres=water_in_reservoir_ml,  # Water in reservoir in ML
+                req_litres=total_net_water_req_ml-volume_liters,
+                req_mm=net_water_req_mm,
+                actual_avia_water_mm=actual_water_available_ml / (area_m2 / 1_000_000),
+                water_difference=actual_water_available_ml - daily_net_water_req_ml,
+                silt=siltation_loss_ml
+            )
+    return None
+
+class Irrigation_schedulerAPIView(APIView):
+    def post(self, request):
+        try:
+            start_date = request.data.get('start_date')
+            end_date = request.data.get('end_date')
+            Year = int(request.data.get('year'))
+            Season = request.data.get('season')
+
+            if not all([start_date, end_date, Year, Season]):
+                return JsonResponse({"error": "Missing required parameters"}, status=400)
+
+            water_req_file = ('D:/sih/backend/data/water_requi.csv')
+            start_date = date.fromisoformat(start_date)
+            end_date = date.fromisoformat(end_date)
+
+            outputs = calculate_longterm_outputs(start_date, end_date, Year, Season)
+
+            return JsonResponse({"data": outputs}, safe=False)
+
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
+
+
+class predictive_analysis_APIView(APIView):
+    def post(self,request):
+        pass

@@ -148,6 +148,7 @@ class LongTermOutput(models.Model):
     water_in_litres = models.FloatField(null=False)
     req_litres = models.FloatField(null=False)
     req_mm = models.FloatField(null=True)
+    actual_avia_water_mm=models.FloatField(null=True)
     water_difference = models.FloatField(null=False)
     silt=models.FloatField(null=True)
     def __str__(self):
@@ -163,5 +164,6 @@ class dam_data(models.Model):
     name=models.CharField(null=True)
     lat=models.FloatField(null=True)
     long=models.FloatField(null=True)
+    damn_area=models.FloatField(null=True)
 # Adding foreign key relationships for RainfallData and TemperatureData
 
