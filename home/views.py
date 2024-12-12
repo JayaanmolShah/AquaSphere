@@ -307,6 +307,8 @@ class dashboardAPIView(APIView):
         future_data = pd.DataFrame({
             'ds': pd.date_range(start=today, periods=periods, freq='D')  # Modify this as per your requirement
         })
+        future_data['cap']=175
+        future_data['floor']=145
 
         forecast = prophet_model.predict(future_data)
         curr_water_requi = forecast[['ds', 'yhat']].to_dict(orient='records')
