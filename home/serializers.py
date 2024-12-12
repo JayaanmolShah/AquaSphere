@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import water_requi,irrig_sched
+from .models import water_requi,irrig_sched,dam_data
 
 class PredictionInputSerializer(serializers.Serializer):
     tavg = serializers.FloatField()
@@ -23,3 +23,9 @@ class IrrigationSchedulesSerializer(serializers.ModelSerializer):
     class Meta:
         model = irrig_sched
         fields = '__all__'
+
+class DamSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = dam_data
+        fields = ['id', 'name', 'lat', 'long', 'damn_area']
+        

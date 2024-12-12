@@ -4,8 +4,8 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.core.serializers import serialize
-from .serializers import PredictionInputSerializer,WaterRequirementsSerializer,IrrigationSchedulesSerializer
-from .models import irrig_sched,water_requi,water_requi_dummy, Season,TemperatureData,PredModelOutputs,LongTermOutput
+from .serializers import PredictionInputSerializer,WaterRequirementsSerializer,IrrigationSchedulesSerializer,DamSerializer
+from .models import irrig_sched,water_requi,water_requi_dummy, Season,TemperatureData,PredModelOutputs,LongTermOutput,dam_data
 from .utils import generate_irrigation_schedule,update_evaporation
 import requests
 import pickle
@@ -467,3 +467,15 @@ class predictive_analysis_APIView(APIView):
 
         except Exception as e:
             return Response({"error": f"An unexpected error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+class dam_dataAPIView(APIView):
+    def get(self, request):
+        try:
+            # Retrieve all records from the Dam model
+            dams = dam_data.objects.all()
+            serializer = DamSerializer(dams, many=True)
+            # Prepare the data in a list of dictionaries
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

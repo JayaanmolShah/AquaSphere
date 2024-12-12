@@ -146,10 +146,10 @@ class LongTermOutput(models.Model):
     date = models.DateField(null=False)
     water_level_prophet = models.FloatField(null=False)
     water_in_litres = models.FloatField(null=False)
-    req_litres = models.FloatField(null=False)
+    req_litres = models.FloatField(null=True)
     req_mm = models.FloatField(null=True)
     actual_avia_water_mm=models.FloatField(null=True)
-    water_difference = models.FloatField(null=False)
+    water_difference = models.FloatField(null=True)
     silt=models.FloatField(null=True)
     def __str__(self):
         return f"Long Term Output for {self.date}"
