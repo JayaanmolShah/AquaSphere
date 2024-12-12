@@ -13,6 +13,7 @@ from joblib import load
 import pandas as pd
 import numpy as np
 from datetime import datetime,timedelta,date
+from django.db.models import F
 
 class PredictWaterLevelAPIView(APIView):
     def post(self, request, *args, **kwargs):
@@ -332,61 +333,67 @@ class dashboardAPIView(APIView):
         else:
             response_data["today_records"] = "No records found for today."
             return Response(response_data, status=status.HTTP_404_NOT_FOUND)
-        
 
 
 
 
-def read_water_req_table(Year, Season):
-    df = pd.read_csv('D:/sih/backend/data/water_requi.csv')
-    filtered_df = df[(df['Year'] == Year) & (df['Season'] == Season)].copy()  # Create a copy to avoid warnings
-
+def read_water_req_table(crop_name):
+    print(crop_name)
+    df = pd.read_csv('D:/sih/backend/data/water_req_file.csv')
+    filtered_df = df[ (df['crop_name'] == crop_name)]
+    print(crop_name)
     # Ensure Total Water Requirement (ML) is not negative
-    if 'Total Water Requirement (ML)' in filtered_df.columns:
-        filtered_df.loc[:, 'Total Water Requirement (ML)'] = filtered_df['Total Water Requirement (ML)'].abs()
-    print(filtered_df)
+    if 'total_water_requirement_(ML)' in filtered_df.columns:
+        filtered_df['total_water_requirement_(ML)'] = filtered_df['total_water_requirement_(ML)'].abs()
+
     return filtered_df
 
-
-def calculate_longterm_outputs(start_date, end_date, year, season):
+def calculate_longterm_outputs(start_date, end_date,crop_name):
     # Read WaterReqTable from CSV
-    water_req_table = read_water_req_table(year, season)
-
+    print(crop_name)
+    water_req_table = read_water_req_table(crop_name)
+    print("read data")
     # Get predictions from PredModelOutputs
     pred_model_outputs = PredModelOutputs.objects.filter(date__range=[start_date, end_date])
     longterm_outputs = []
     dam_area_m2 = 1080000000  # Area of dam in m^2
+    dam_capacity_liters = 2000000000000  # Example dam capacity in liters (adjust as per actual capacity)
 
     # Process each crop in the water requirement table
     for _, record in water_req_table.iterrows():
-        
-        area_m2 = record['Area (Ha)'] * 10000
-        volume_liters=area_m2 * record['Rainfall (mm)']
-        net_water_req_mm = record['Irrigation Requirement (mm)'] - record['Rainfall (mm)']
-
-        # Ensure water requirement is not negative
-        net_water_req_mm = max(net_water_req_mm, 0)
-        total_net_water_req_ml = (net_water_req_mm * area_m2) / 1_000_000
+        area_m2 =(record['flood_area']+record['sensor'] )* 10000
+        industrial_req_liters = record.get('industrial_requirement(ML)', 0) * 1000000
+        domestic_req_liters = record.get('domestic_requirement(ML)', 0) * 1000000
 
         for prediction in pred_model_outputs:
-            daily_net_water_req_ml = (
-                ((net_water_req_mm - prediction.predicted_rain + prediction.evapotranspiration) * area_m2) / 1_000_000
-            )
-            daily_net_water_req_ml = max(daily_net_water_req_ml, 0)  # Ensure non-negative values
+            daily_water_req_mm = record['daily_water_req(mm)']
+            predicted_rain = prediction.predicted_rain or 0
+            evapotranspiration = prediction.evapotranspiration or 0
+            req_mm = daily_water_req_mm - (predicted_rain / 30) + evapotranspiration
+            req_liters = (req_mm * area_m2) + industrial_req_liters + domestic_req_liters
 
-            water_in_reservoir_ml = (prediction.water_level_prophet * dam_area_m2) / 1_000  # Convert to ML
-            siltation_loss_ml = 0.02 * water_in_reservoir_ml
-            actual_water_available_ml = water_in_reservoir_ml - siltation_loss_ml
+            silt_liters = dam_capacity_liters * 0.02
 
+            # Calculate water in reservoir and available water
+            water_in_liters = prediction.water_level_prophet * dam_area_m2
+            evaporation_loss_liters = (prediction.evaporation_loss or 0) * dam_area_m2
+            actual_avia_water_mm = (water_in_liters - silt_liters - evaporation_loss_liters) / area_m2
+
+            # Ensure no negative values
+            req_mm = max(req_mm, 0)
+            req_liters = max(req_liters, 0)
+            actual_avia_water_mm = max(actual_avia_water_mm, 0)
+
+            # Create LongTermOutput record
             longterm_output = LongTermOutput.objects.create(
                 date=prediction.date,
                 water_level_prophet=prediction.water_level_prophet,
-                water_in_litres=water_in_reservoir_ml,  # Water in reservoir in ML
-                req_litres=total_net_water_req_ml-volume_liters,
-                req_mm=net_water_req_mm,
-                actual_avia_water_mm=actual_water_available_ml / (area_m2 / 1_000_000),
-                water_difference=actual_water_available_ml - daily_net_water_req_ml,
-                silt=siltation_loss_ml
+                water_in_litres=water_in_liters,
+                req_litres=req_liters,
+                req_mm=req_mm,
+                actual_avia_water_mm=actual_avia_water_mm,
+                water_difference=water_in_liters - req_liters,
+                silt=silt_liters
             )
     return None
 
@@ -395,24 +402,68 @@ class Irrigation_schedulerAPIView(APIView):
         try:
             start_date = request.data.get('start_date')
             end_date = request.data.get('end_date')
-            Year = int(request.data.get('year'))
-            Season = request.data.get('season')
-
-            if not all([start_date, end_date, Year, Season]):
-                return JsonResponse({"error": "Missing required parameters"}, status=400)
-
-            water_req_file = ('D:/sih/backend/data/water_requi.csv')
+            crop_name=request.data.get('crop_name')
+            print(crop_name)
+        
             start_date = date.fromisoformat(start_date)
             end_date = date.fromisoformat(end_date)
-
-            outputs = calculate_longterm_outputs(start_date, end_date, Year, Season)
+            print(start_date)
+            outputs = calculate_longterm_outputs(start_date, end_date,crop_name)
 
             return JsonResponse({"data": outputs}, safe=False)
 
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)
 
-
 class predictive_analysis_APIView(APIView):
     def post(self,request):
-        pass
+        try:
+            # Extract start_date and end_date from the request
+            start_date = request.data.get('start_date', None)
+            end_date = request.data.get('end_date', None)
+            
+            if not start_date or not end_date:
+                return Response({"error": "Both start_date and end_date are required."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Convert to datetime objects
+            try:
+                start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
+                end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+            except ValueError:
+                return Response({"error": "Invalid date format. Use 'YYYY-MM-DD'."}, status=status.HTTP_400_BAD_REQUEST)
+            date_range = [start_date + timedelta(days=i) for i in range((end_date - start_date).days + 1)]
+            data = []
+
+            for current_date in date_range:
+                # Query LongTermOutput table for the current date
+                long_term_record = LongTermOutput.objects.filter(date=current_date).first()
+
+                # Query PredModelOutputs table for the current date
+                pred_model_record = PredModelOutputs.objects.filter(date=current_date).first()
+
+                if long_term_record and pred_model_record:
+                    # Calculate available_water, saved_water, and required_water
+                    available_water = long_term_record.actual_avia_water_mm
+                    saved_water = long_term_record.actual_avia_water_mm - ((long_term_record.req_mm * 1080000000) / 1000)
+                    required_water = long_term_record.req_mm
+
+                    # Get evaporation_loss from PredModelOutputs table
+                    evaporation = pred_model_record.evaporation_loss
+
+                    # Append the data for the current date
+                    data.append({
+                        "date": current_date,
+                        "available_water": available_water,
+                        "saved_water": saved_water,
+                        "evaporation_loss": evaporation,
+                        "required_water": required_water
+                    })
+
+            if not data:
+                return Response({"message": "No records found for the given date range."}, status=status.HTTP_404_NOT_FOUND)
+
+            # Return the response with individual date-wise data
+            return Response(data, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": f"An unexpected error occurred: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
